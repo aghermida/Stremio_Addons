@@ -52,6 +52,7 @@ interface Manifest {
   version: string;
   name: string;
   description: string;
+  logo: string;
   catalogs: unknown[];
   resources: unknown[];
   types: string[];
@@ -136,6 +137,7 @@ export class NextcloudAddon {
       version: '1.0.0',
       name: 'Nextcloud Media',
       description: 'Stream media files from your Nextcloud Stremio folder!',
+      logo: `${config.baseUrl}/logo.svg`,
       catalogs: [
         {
           name: 'Nextcloud Media',
