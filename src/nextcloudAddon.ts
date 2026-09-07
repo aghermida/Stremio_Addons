@@ -142,16 +142,16 @@ export class NextcloudAddon {
         {
           name: 'Nextcloud Media',
           id: 'nextcloud.videos',
-          type: 'movie',
+          type: 'Cloud',
           extra: [{ name: 'search', isRequired: false }, { name: 'skip' }],
         },
       ],
       resources: [
         { name: 'stream', types: ['movie', 'series'], idPrefixes: ['tt'] },
-        { name: 'catalog', types: ['movie'], idPrefixes: ['nextcloud'] },
-        { name: 'meta', types: ['movie'], idPrefixes: ['nextcloud'] },
+        { name: 'catalog', types: ['Cloud'], idPrefixes: ['nextcloud'] },
+        { name: 'meta', types: ['Cloud'], idPrefixes: ['nextcloud'] },
       ],
-      types: ['movie', 'series'],
+      types: ['movie', 'series', 'Cloud'],
       behaviorHints: {
         adult: false,
         p2p: false,
@@ -201,7 +201,7 @@ export class NextcloudAddon {
   }
 
   async getCatalog(type: string, id: string, extras?: string): Promise<MetaPreview[]> {
-    if (id !== 'nextcloud.videos' || type !== 'movie') {
+    if (id !== 'nextcloud.videos' || type !== 'Cloud') {
       throw new Error('Unsupported catalog type or ID');
     }
     const { search, skip = 0 } = parseExtras(extras);
@@ -221,7 +221,7 @@ export class NextcloudAddon {
   }
 
   async getMeta(type: string, id: string) {
-    if (type !== 'movie' || !id.startsWith('nextcloud.')) {
+    if (type !== 'Cloud' || !id.startsWith('nextcloud.')) {
       throw new Error('Unsupported type or ID for Meta request');
     }
 
@@ -238,7 +238,7 @@ export class NextcloudAddon {
       id,
       name: cleanName,
       description: `${formatBytes(stat.size, 1000)} • ${stat.mtime.toLocaleDateString()}`,
-      type: 'movie',
+      type: 'Cloud',
       posterShape: 'landscape',
       videos: [
         {
@@ -267,7 +267,7 @@ export class NextcloudAddon {
       id: this.filenameToId(filename),
       name: cleanFilename(filename),
       description: size ? formatBytes(size, 1000) : undefined,
-      type: 'movie',
+      type: 'Cloud',
     };
   }
 }
