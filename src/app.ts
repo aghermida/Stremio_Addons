@@ -29,6 +29,13 @@ export function createApp(): Express {
 
   app.use(corsMiddleware);
 
+  // Not sensitive, and the manifest's `logo` field is a fixed, key-less URL
+  // (built from NEXTCLOUD_ADDON_BASE_URL alone) — must stay reachable outside
+  // the access-key gate below or Stremio can't load it.
+  app.get('/logo.svg', (_req, res) => {
+    res.sendFile('logo.svg', { root: path.join(__dirname, 'public') });
+  });
+
   // Everything (including the setup page) lives behind a shared secret path
   // segment: with none of this, manifest/catalog/meta/stream would accept an
   // attacker-supplied WebDAV url+credentials with no restriction — an open
