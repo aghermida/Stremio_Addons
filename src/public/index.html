@@ -49,6 +49,12 @@
       return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
 
+    // This page is only reachable at /<accessKey>/ in the first place, so the
+    // access key is just the current path's first segment.
+    function getAccessKey() {
+      return window.location.pathname.split('/').filter(Boolean)[0] || '';
+    }
+
     document.getElementById('generate').addEventListener('click', () => {
       const config = {
         url: document.getElementById('url').value.replace(/\/$/, ''),
@@ -57,7 +63,7 @@
         folder: document.getElementById('folder').value,
       };
       const encoded = base64UrlEncode(JSON.stringify(config));
-      const manifestUrl = `${window.location.origin}/${encoded}/manifest.json`;
+      const manifestUrl = `${window.location.origin}/${getAccessKey()}/${encoded}/manifest.json`;
       document.getElementById('manifestUrl').textContent = manifestUrl;
       document.getElementById('result').classList.add('visible');
     });

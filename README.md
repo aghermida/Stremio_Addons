@@ -11,17 +11,18 @@ Users add it to AIOStreams as a "Custom Addon" (paste the manifest URL generated
 | `PORT` | no (default `8000`) | HTTP listen port |
 | `NEXTCLOUD_ADDON_SECRET` | yes | HMAC key used to sign media-proxy URLs so they can't be forged. Own secret, unrelated to AIOStreams' internal secret. |
 | `NEXTCLOUD_ADDON_BASE_URL` | yes | Public URL this service is reachable at (e.g. `https://nextcloud.example.com`) — used to build stream URLs and shown on the setup page. |
+| `NEXTCLOUD_ADDON_ACCESS_KEY` | yes | Shared secret required as the first path segment on every route except `/media`. Without it, manifest/catalog/meta/stream would accept an attacker-supplied WebDAV url+credentials with no restriction, making this an open relay for anyone who finds the subdomain. Generate with `openssl rand -hex 24`. |
 
 ## Run locally
 
 ```bash
 pnpm -F nextcloud-addon build
-PORT=8000 NEXTCLOUD_ADDON_SECRET=dev-secret NEXTCLOUD_ADDON_BASE_URL=http://localhost:8000 pnpm -F nextcloud-addon start
+PORT=8000 NEXTCLOUD_ADDON_SECRET=dev-secret NEXTCLOUD_ADDON_BASE_URL=http://localhost:8000 NEXTCLOUD_ADDON_ACCESS_KEY=dev-key pnpm -F nextcloud-addon start
 ```
 
 Or for live reload: `pnpm -F nextcloud-addon dev` (with the same env vars set).
 
-Open `http://localhost:8000/` for the setup page.
+Open `http://localhost:8000/<NEXTCLOUD_ADDON_ACCESS_KEY>/` for the setup page.
 
 ## Docker
 
@@ -30,14 +31,17 @@ docker build -t nextcloud-addon .
 docker run -p 8000:8000 \
   -e NEXTCLOUD_ADDON_SECRET=... \
   -e NEXTCLOUD_ADDON_BASE_URL=https://your-public-url \
+  -e NEXTCLOUD_ADDON_ACCESS_KEY=... \
   nextcloud-addon
 ```
 
 ## Routes
 
-- `GET /` — setup page (URL/username/password/folder → manifest URL)
-- `GET /:encodedConfig/manifest.json` — Stremio manifest
-- `GET /:encodedConfig/meta/:type/:id.json`
-- `GET /:encodedConfig/catalog/:type/:id{/:extras}.json`
-- `GET /:encodedConfig/stream/:type/:id.json`
-- `GET /media/:mediaToken/:base64Config/files/:filename` — WebDAV file proxy (range-request capable), used by the stream URLs above
+Every route below except `/media` requires the access key as the first path segment (`/:accessKey/...`); a missing or wrong key returns `404`.
+
+- `GET /:accessKey/` — setup page (URL/username/password/folder → manifest URL)
+- `GET /:accessKey{/:encodedConfig}/manifest.json` — Stremio manifest
+- `GET /:accessKey/:encodedConfig/meta/:type/:id.json`
+- `GET /:accessKey/:encodedConfig/catalog/:type/:id{/:extras}.json`
+- `GET /:accessKey/:encodedConfig/stream/:type/:id.json`
+- `GET /media/:mediaToken/:base64Config/files/:filename` — WebDAV file proxy (range-request capable), used by the stream URLs above. Not behind the access key — it has its own HMAC token that can't be forged without `NEXTCLOUD_ADDON_SECRET`.

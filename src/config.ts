@@ -10,4 +10,5 @@ export const config = {
   port: Number(process.env.PORT) || 8000,
   secret: required('NEXTCLOUD_ADDON_SECRET'),
   baseUrl: required('NEXTCLOUD_ADDON_BASE_URL').replace(/\/$/, ''),
+  accessKey: required('NEXTCLOUD_ADDON_ACCESS_KEY'),
 };

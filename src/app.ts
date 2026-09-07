@@ -6,6 +6,7 @@ import metaRouter from './routes/meta.js';
 import catalogRouter from './routes/catalog.js';
 import streamRouter from './routes/stream.js';
 import mediaRouter from './routes/media.js';
+import { requireAccessKey } from './middlewares/accessKey.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,12 +28,21 @@ export function createApp(): Express {
   const app = express();
 
   app.use(corsMiddleware);
-  app.use(express.static(path.join(__dirname, 'public')));
 
-  app.use('/', manifestRouter);
-  app.use('/', metaRouter);
-  app.use('/', catalogRouter);
-  app.use('/', streamRouter);
+  // Everything (including the setup page) lives behind a shared secret path
+  // segment: with none of this, manifest/catalog/meta/stream would accept an
+  // attacker-supplied WebDAV url+credentials with no restriction — an open
+  // relay for anyone who finds the subdomain. /media is exempt: it already
+  // requires its own HMAC token that can't be forged without the server secret.
+  app.use(
+    '/:accessKey',
+    requireAccessKey,
+    express.static(path.join(__dirname, 'public')),
+    manifestRouter,
+    metaRouter,
+    catalogRouter,
+    streamRouter
+  );
   app.use('/media', mediaRouter);
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
