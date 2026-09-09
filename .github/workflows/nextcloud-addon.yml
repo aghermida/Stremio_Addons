@@ -1,0 +1,37 @@
+name: Build and Push Nextcloud Addon Image
+
+# Independent of any other addon's workflow in this repo: only builds
+# nextcloud-addon/, which is fully self-contained (own Dockerfile,
+# package.json, lockfile).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'nextcloud-addon/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: nextcloud-addon
+          push: true
+          tags: ghcr.io/aghermida/nextcloud-addon:latest
