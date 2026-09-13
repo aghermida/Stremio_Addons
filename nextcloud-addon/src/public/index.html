@@ -33,6 +33,10 @@
   <label for="folder">Carpeta</label>
   <input id="folder" type="text" value="/Stremio" required />
 
+  <label for="tmdbApiKey">TMDB API Key (opcional)</label>
+  <input id="tmdbApiKey" type="text" placeholder="32 caracteres" />
+  <p class="hint">Si la rellenas, el catálogo mostrará pósters y sinopsis reales en vez del nombre de archivo. Sácala gratis en <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org → Ajustes → API</a> (la clave de 32 caracteres, no el "Read Access Token").</p>
+
   <button id="generate">Generar URL de manifest</button>
 
   <div id="result">
@@ -56,11 +60,13 @@
     }
 
     document.getElementById('generate').addEventListener('click', () => {
+      const tmdbApiKey = document.getElementById('tmdbApiKey').value.trim();
       const config = {
         url: document.getElementById('url').value.replace(/\/$/, ''),
         username: document.getElementById('username').value,
         password: document.getElementById('password').value,
         folder: document.getElementById('folder').value,
+        ...(tmdbApiKey ? { tmdbApiKey } : {}),
       };
       const encoded = base64UrlEncode(JSON.stringify(config));
       const manifestUrl = `${window.location.origin}/${getAccessKey()}/${encoded}/manifest.json`;

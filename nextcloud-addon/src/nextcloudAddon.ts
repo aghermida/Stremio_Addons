@@ -2,6 +2,7 @@ import { createHmac } from 'crypto';
 import { createClient, WebDAVClient } from 'webdav';
 import { config } from './config.js';
 import { resolveTitleAndYear } from './utils/titleResolver.js';
+import { resolveTmdbMatch, type TmdbMatch } from './utils/tmdbResolver.js';
 import { parseId } from './utils/idParser.js';
 import { parseExtras } from './utils/extrasParser.js';
 import { formatBytes } from './utils/formatBytes.js';
@@ -27,6 +28,7 @@ export interface NextcloudConfig {
   username: string;
   password: string;
   folder: string;
+  tmdbApiKey?: string;
 }
 
 export function getNextcloudMediaToken(config: NextcloudConfig): string {
@@ -63,6 +65,7 @@ interface MetaPreview {
   id: string;
   name: string;
   description?: string;
+  poster?: string;
   type: string;
 }
 
@@ -213,11 +216,23 @@ export class NextcloudAddon {
     }
 
     const page = files.slice(skip, skip + 100);
-    const stats = await Promise.all(page.map((f) => this.getFileStat(f)));
+    const [stats, tmdbMatches] = await Promise.all([
+      Promise.all(page.map((f) => this.getFileStat(f))),
+      Promise.all(page.map((f) => this.resolveTmdb(f))),
+    ]);
 
     return page.map((filename, i) =>
-      this.createMetaPreview(filename, stats[i]?.size)
+      this.createMetaPreview(filename, stats[i]?.size, tmdbMatches[i])
     );
+  }
+
+  /** Resolves TMDB metadata for a filename, if a TMDB API key is configured. Never throws. */
+  private async resolveTmdb(filename: string): Promise<TmdbMatch | null> {
+    if (!this.config.tmdbApiKey) return null;
+    const year = extractYearFromFilename(filename);
+    const searchTitle = extractSearchTitle(filename, year);
+    if (!searchTitle) return null;
+    return resolveTmdbMatch(this.config.tmdbApiKey, searchTitle, year);
   }
 
   async getMeta(type: string, id: string) {
@@ -228,18 +243,26 @@ export class NextcloudAddon {
     const filename = this.idToFilename(id);
     if (!filename) throw new Error('Invalid Nextcloud meta ID');
 
-    const stat = await this.getFileStat(filename);
+    const [stat, tmdbMatch] = await Promise.all([
+      this.getFileStat(filename),
+      this.resolveTmdb(filename),
+    ]);
     if (!stat) throw new Error(`File not found: ${filename}`);
 
     const streamUrl = this.getStreamUrl(filename);
-    const cleanName = cleanFilename(filename);
+    const sizeAndDate = `${formatBytes(stat.size, 1000)} • ${stat.mtime.toLocaleDateString()}`;
 
     return {
       id,
-      name: cleanName,
-      description: `${formatBytes(stat.size, 1000)} • ${stat.mtime.toLocaleDateString()}`,
+      name: tmdbMatch?.title || cleanFilename(filename),
+      description: tmdbMatch?.overview || sizeAndDate,
       type: 'Cloud',
       posterShape: 'landscape',
+      poster: tmdbMatch?.posterUrl,
+      background: tmdbMatch?.backgroundUrl,
+      genres: tmdbMatch?.genres.length ? tmdbMatch.genres : undefined,
+      imdbRating: tmdbMatch?.rating ? tmdbMatch.rating.toFixed(1) : undefined,
+      releaseInfo: tmdbMatch?.releaseYear?.toString(),
       videos: [
         {
           id: filename,
@@ -262,11 +285,16 @@ export class NextcloudAddon {
     };
   }
 
-  private createMetaPreview(filename: string, size?: number): MetaPreview {
+  private createMetaPreview(
+    filename: string,
+    size?: number,
+    tmdbMatch?: TmdbMatch | null
+  ): MetaPreview {
     return {
       id: this.filenameToId(filename),
-      name: cleanFilename(filename),
-      description: size ? formatBytes(size, 1000) : undefined,
+      name: tmdbMatch?.title || cleanFilename(filename),
+      description: tmdbMatch?.overview || (size ? formatBytes(size, 1000) : undefined),
+      poster: tmdbMatch?.posterUrl,
       type: 'Cloud',
     };
   }
@@ -283,10 +311,26 @@ function cleanFilename(filename: string): string {
   const spaced = base.replace(/[._]/g, ' ');
   return spaced
     .replace(
-      /\s*(1080p|720p|480p|2160p|4K|UHD|BluRay|BDRip|WEBRip|WEB-DL|HDRip|HDTV|DVDRip|x264|x265|HEVC|H\.264|H\.265|AAC|DTS|DD5|AC3|Remux|PROPER|REPACK).*$/i,
+      /\s*(1080p|720p|480p|2160p|4K|UHD|BluRay|BDRip|WEBRip|WEB-DL|HDRip|HDTV|DVDRip|x264|x265|HEVC|H\.264|H\.265|AAC|DTS|DD5|AC3|Remux|PROPER|REPACK|Castellano|Espa[ñn]ol|Latino|Ingl[ée]s|Dual|Subtitulado|VOSE|VOSI|\besp\b).*$/i,
       ''
     )
     .trim();
+}
+
+/** Extracts a plausible release year from a filename, if present. */
+function extractYearFromFilename(filename: string): number | undefined {
+  const match = filename.match(/\b(19|20)\d{2}\b/);
+  return match ? parseInt(match[0], 10) : undefined;
+}
+
+/**
+ * Builds a search-friendly title for TMDB from a raw filename: reuses
+ * cleanFilename's extension/quality-tag stripping, then also drops the
+ * year (searched separately as a filter, not as part of the query text).
+ */
+function extractSearchTitle(filename: string, year?: number): string {
+  const cleaned = cleanFilename(filename);
+  return (year ? cleaned.replace(String(year), '') : cleaned).trim();
 }
 
 /** Check if a filename matches the requested content */
