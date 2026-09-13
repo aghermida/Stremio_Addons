@@ -36,9 +36,16 @@ export function createApp(): Express {
     res.sendFile('logo.svg', { root: path.join(__dirname, 'public') });
   });
 
-  // Everything (including the setup page) lives behind a shared secret path
-  // segment: with none of this, manifest/catalog/meta/stream would accept an
-  // attacker-supplied WebDAV url+credentials with no restriction — an open
+  // /media must be mounted before the /:accessKey catch-all below — otherwise
+  // Express matches "media" itself as the :accessKey segment (it's a wildcard
+  // covering any first path segment) and requireAccessKey 404s every request
+  // before it ever reaches mediaRouter. Same reason /logo.svg is registered
+  // above the catch-all too.
+  app.use('/media', mediaRouter);
+
+  // Everything else (including the setup page) lives behind a shared secret
+  // path segment: with none of this, manifest/catalog/meta/stream would accept
+  // an attacker-supplied WebDAV url+credentials with no restriction — an open
   // relay for anyone who finds the subdomain. /media is exempt: it already
   // requires its own HMAC token that can't be forged without the server secret.
   app.use(
@@ -50,7 +57,6 @@ export function createApp(): Express {
     catalogRouter,
     streamRouter
   );
-  app.use('/media', mediaRouter);
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error(err);
