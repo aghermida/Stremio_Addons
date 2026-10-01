@@ -310,6 +310,7 @@ export function getFilmIndex(): Promise<FilmIndex> {
  */
 const QUALITY_LABEL: Record<string, string> = { HD_FULL: '1080p', HD_READY: '720p', HQ: '576p', Alta: '360p' };
 const QUALITY_ORDER = ['HD_FULL', 'HD_READY', 'HQ', 'Alta'];
+const HD_QUALITIES = ['HD_FULL', 'HD_READY']; // 720p and above
 const HLS_HOST = 'https://rtvehlsvodlote7.rtve.es/mediavodv2/resources';
 
 /**
@@ -341,7 +342,9 @@ export function getStream(id: string): Promise<StreamInfo> {
       const presets = ((d.presets ?? []) as { fichero: string; quality: string }[])
         .filter((p) => p.fichero && d.catuid)
         .sort((a, b) => QUALITY_ORDER.indexOf(a.quality) - QUALITY_ORDER.indexOf(b.quality));
-      const candidates = presets.map((p) => ({
+      // Drop sub-720p renditions, unless nothing at 720p or above exists.
+      const hd = presets.filter((p) => HD_QUALITIES.includes(p.quality));
+      const candidates = (hd.length ? hd : presets).map((p) => ({
         label: QUALITY_LABEL[p.quality] ?? p.quality,
         url: `${HLS_HOST}/${d.catuid}/${p.fichero}/video.m3u8?hls_no_audio_only=true&hls_client_manifest_version=3&idasset=${id}`,
       }));
