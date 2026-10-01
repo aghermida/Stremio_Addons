@@ -171,16 +171,14 @@ export async function getMeta(type: string, id: string) {
 export async function getStreams(type: string, id: string) {
   if (!id.startsWith(VIDEO_PREFIX)) return { streams: [] };
   const info = await getStream(id.slice(VIDEO_PREFIX.length));
-  if (!info.hls) return { streams: [] }; // DRM / geo-blocked / expired
+  // No plain source: DRM-only, geo-blocked or expired.
+  const subtitles = info.subtitles.map((s, i) => ({ id: `rtve-${i}`, lang: s.lang, url: s.url }));
   return {
-    streams: [
-      {
-        name: 'RTVE Play',
-        description: 'HLS · hasta 1080p',
-        url: info.hls,
-        subtitles: info.subtitles.map((s, i) => ({ id: `rtve-${i}`, lang: s.lang, url: s.url })),
-        behaviorHints: { notWebReady: false },
-      },
-    ],
+    streams: info.sources.map((src) => ({
+      name: 'RTVE Play',
+      description: `HLS · ${src.label}`,
+      url: src.url,
+      subtitles,
+    })),
   };
 }

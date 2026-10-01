@@ -37,7 +37,7 @@ export interface Video {
 }
 
 export interface StreamInfo {
-  hls?: string;
+  sources: { label: string; url: string }[];
   subtitles: { lang: string; url: string }[];
 }
 
@@ -253,30 +253,57 @@ export function getEpisodes(programId: string, max: number): Promise<Video[]> {
 // ---- streams --------------------------------------------------------------
 
 /**
- * Resolves a playable HLS URL. ztnr.rtve.es answers with a 302 to the CDN
- * manifest; that CDN URL is not bound to the caller's IP, so it is handed
- * straight to the Stremio client (no proxying through this server).
+ * Resolves playable HLS URLs, best quality first. They are built from the
+ * `presets` list of ztnr's JSON (the same way yt-dlp does): that gives the
+ * plain CDN manifest even for videos flagged as DRM, for which the
+ * `ztnr/{id}.m3u8` redirect only offers the encrypted `hls_drm` manifest.
+ * CDN URLs are not bound to the caller's IP, so they go straight to the
+ * Stremio client (no proxying through this server).
  */
+const QUALITY_LABEL: Record<string, string> = { HD_FULL: '1080p', HD_READY: '720p', HQ: '576p', Alta: '360p' };
+const QUALITY_ORDER = ['HD_FULL', 'HD_READY', 'HQ', 'Alta'];
+const HLS_HOST = 'https://rtvehlsvodlote7.rtve.es/mediavodv2/resources';
+
+async function isPlainHls(url: string): Promise<boolean> {
+  try {
+    const res = await limited(() => fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) }));
+    if (!res.ok) return false;
+    const body = await res.text();
+    return body.startsWith('#EXTM3U') && !/#EXT-X-(SESSION-)?KEY/.test(body);
+  } catch {
+    return false;
+  }
+}
+
 export function getStream(id: string): Promise<StreamInfo> {
   return cached(`st:${id}`, 5 * 60_000, async () => {
-    const info: StreamInfo = { subtitles: [] };
-
-    const res = await limited(() =>
-      fetch(`${ZTNR}/${id}.m3u8`, {
-        headers: { 'User-Agent': UA },
-        redirect: 'manual',
-        signal: AbortSignal.timeout(20000),
-      })
-    );
-    const loc = res.headers.get('location');
-    if (res.status >= 300 && res.status < 400 && loc) info.hls = loc;
+    const info: StreamInfo = { sources: [], subtitles: [] };
 
     try {
-      const d = await getJson<any>(`${ZTNR}/${id}.json`);
-      const subs = (d['0']?.subtitulos ?? []) as { subtitulo: string; idioma: string }[];
+      const d = (await getJson<any>(`${ZTNR}/${id}.json`))['0'] ?? {};
+      const subs = (d.subtitulos ?? []) as { subtitulo: string; idioma: string }[];
       info.subtitles = subs.map((s) => ({ lang: s.idioma, url: `${RESOURCES}/${s.subtitulo}` }));
+
+      const presets = ((d.presets ?? []) as { fichero: string; quality: string }[])
+        .filter((p) => p.fichero && d.catuid)
+        .sort((a, b) => QUALITY_ORDER.indexOf(a.quality) - QUALITY_ORDER.indexOf(b.quality));
+      const candidates = presets.map((p) => ({
+        label: QUALITY_LABEL[p.quality] ?? p.quality,
+        url: `${HLS_HOST}/${d.catuid}/${p.fichero}/video.m3u8?hls_no_audio_only=true&hls_client_manifest_version=3&idasset=${id}`,
+      }));
+      const ok = await Promise.all(candidates.map((c) => isPlainHls(c.url)));
+      candidates.forEach((c, i) => ok[i] && info.sources.push(c));
     } catch {
-      /* subtitles are optional */
+      /* fall through to the redirect */
+    }
+
+    if (!info.sources.length) {
+      // Fallback: the redirect, unless it points at the DRM manifest.
+      const res = await limited(() =>
+        fetch(`${ZTNR}/${id}.m3u8`, { headers: { 'User-Agent': UA }, redirect: 'manual', signal: AbortSignal.timeout(20000) })
+      );
+      const loc = res.headers.get('location');
+      if (res.status >= 300 && res.status < 400 && loc && !/drm/i.test(loc)) info.sources.push({ label: 'HLS', url: loc });
     }
     return info;
   });
