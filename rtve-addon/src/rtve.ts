@@ -13,6 +13,7 @@ export interface Program {
   description: string;
   programType: string | null;
   numSeasons: number;
+  imdb?: string;
   poster?: string;
   background?: string;
   logo?: string;
@@ -28,6 +29,7 @@ export interface Video {
   thumbnail?: string;
   duration?: number;
   published?: string;
+  aired?: string; // YYYY-MM-DD, local (Madrid) emission date
   season: number | null;
   episode: number | null;
   programTitle?: string;
@@ -47,7 +49,7 @@ export interface StreamInfo {
 
 const cache = new Map<string, { exp: number; value: Promise<unknown> }>();
 
-function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+export function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && hit.exp > Date.now()) return hit.value as Promise<T>;
   const value = load();
@@ -122,6 +124,7 @@ function toProgram(i: any): Program {
     description: stripHtml(i.longDescription) || stripHtml(i.description),
     programType: i.programType ?? null,
     numSeasons: Number(i.numSeasons) || 0,
+    imdb: /^tt\d+$/.test(String(i.idImdb ?? '')) ? String(i.idImdb) : undefined,
     poster: i.imgPoster || i.imgPortada || i.thumbnail || undefined,
     background: i.imgBackground || i.imgBanner || undefined,
     logo: i.logo || undefined,
@@ -144,6 +147,7 @@ function toVideo(i: any): Video {
     thumbnail: i.thumbnail || undefined,
     duration: Number(i.duration) || undefined,
     published: Number.isFinite(ts) && ts > 0 ? new Date(ts).toISOString() : undefined,
+    aired: String(i.dateOfEmission ?? '').match(/^(\d{2})-(\d{2})-(\d{4})/)?.slice(1).reverse().join('-') || undefined,
     season: null,
     episode: Number(i.episode) > 0 ? Number(i.episode) : null,
     programTitle: prog,

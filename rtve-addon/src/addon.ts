@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { getCinemetaSeries } from './cinemeta.js';
 import {
   FILM_TYPE,
   getEpisodes,
@@ -181,7 +182,45 @@ export async function getStreams(type: string, id: string) {
     const all = await Promise.all(matches.map((v) => streamsFor(v.id, matches.length > 1 ? v.title : undefined)));
     return { streams: all.flat() };
   }
+
+  // IMDb episode id (tt…:season:episode): match the RTVE program, then the episode.
+  const ep = type === 'series' ? id.match(/^(tt\d+):(\d+):(\d+)$/) : null;
+  if (ep) return { streams: await seriesStreams(ep[1], Number(ep[2]), Number(ep[3])) };
+
   return { streams: [] };
+}
+
+const dayDiff = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
+
+async function seriesStreams(imdb: string, season: number, episode: number) {
+  const [meta, programs] = await Promise.all([getCinemetaSeries(imdb), getPrograms()]);
+
+  // Program match: RTVE's own IMDb id first, then an exact name match.
+  let candidates = programs.filter((p) => p.imdb === imdb);
+  if (!candidates.length && meta) {
+    const name = normalize(meta.name);
+    candidates = programs.filter((p) => p.programType !== FILM_TYPE && normalize(p.name) === name);
+  }
+  if (!candidates.length) return [];
+
+  // Cinemeta may number seasons by year, so the air date is the primary key.
+  const date = meta?.videos.find((v) => v.season === season && v.episode === episode)?.released?.slice(0, 10);
+
+  const found: { prog: Program; video: Video }[] = [];
+  for (const prog of candidates) {
+    const eps = await getEpisodes(prog.id, config.maxEpisodes);
+    let m = date ? eps.filter((e) => e.aired === date) : [];
+    if (!m.length && date) m = eps.filter((e) => e.aired && dayDiff(e.aired, date) <= 1);
+    // Plain 1-based numbering (not years) can be compared to RTVE's directly.
+    if (!m.length && season < 1900) m = eps.filter((e) => e.season === season && e.episode === episode);
+    m.forEach((video) => found.push({ prog, video }));
+  }
+
+  const multiple = found.length > 1;
+  const all = await Promise.all(
+    found.map(({ prog, video }) => streamsFor(video.id, multiple ? `${prog.name}: ${video.title}` : undefined))
+  );
+  return all.flat();
 }
 
 async function streamsFor(videoId: string, label?: string) {
