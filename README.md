@@ -7,3 +7,4 @@ Colección de addons de Stremio independientes, cada uno en su propia carpeta co
 | Addon | Descripción | Imagen |
 |---|---|---|
 | [`nextcloud-addon`](./nextcloud-addon) | Addon de Stremio que expone archivos de una carpeta de Nextcloud (vía WebDAV) como catálogo navegable y streams reproducibles. | `ghcr.io/aghermida/nextcloud-addon:latest` |
+| [`rtve-addon`](./rtve-addon) | Addon de Stremio para RTVE Play: series, documentales, programas y cine con streams HLS y subtítulos. | `ghcr.io/aghermida/rtve-addon:latest` |
