@@ -86,12 +86,16 @@ const programMeta = (p: Program) => ({
   description: p.description,
 });
 
+// RTVE only publishes 16:9 stills for films. When the film has an IMDb id, use
+// the standard vertical poster (same source Stremio uses for the rest of the
+// catalogue); otherwise fall back to the still and flag it as landscape.
 const filmMeta = (v: Video) => ({
   id: VIDEO_PREFIX + v.id,
   type: 'movie',
   name: v.title,
-  poster: v.thumbnail,
-  posterShape: 'landscape',
+  poster: v.imdb ? `https://images.metahub.space/poster/medium/${v.imdb}/img` : v.thumbnail,
+  posterShape: v.imdb ? 'poster' : 'landscape',
+  background: v.thumbnail,
   description: v.description,
 });
 
@@ -155,7 +159,6 @@ export async function getMeta(type: string, id: string) {
     return {
       meta: {
         ...filmMeta(v),
-        background: v.thumbnail,
         releaseInfo: v.year ? String(v.year) : undefined,
         released: v.published,
         runtime: v.duration ? `${Math.round(v.duration / 60000)} min` : undefined,
