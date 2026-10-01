@@ -1,8 +1,9 @@
 import { config } from './config.js';
 import {
+  FILM_TYPE,
   getEpisodes,
+  getFilmIndex,
   getProgram,
-  getProgramVideos,
   getPrograms,
   getStream,
   getVideo,
@@ -14,7 +15,6 @@ import {
 const PROGRAM_PREFIX = 'rtve:p:';
 const VIDEO_PREFIX = 'rtve:v:';
 
-const FILM_TYPE = 'Contenedor Películas';
 const DOC_TYPES = ['Documental', 'Documental Original', 'Reportajes Factual'];
 
 type Group = 'series' | 'documentales' | 'programas';
@@ -35,13 +35,13 @@ async function programsIn(group: Group): Promise<Program[]> {
 const genresOf = (programs: Program[]) => [...new Set(programs.map(genreOf))].sort((a, b) => a.localeCompare(b, 'es'));
 
 export async function getManifest() {
-  const [series, docs, shows, all] = await Promise.all([
+  const [series, docs, shows, filmIndex] = await Promise.all([
     programsIn('series'),
     programsIn('documentales'),
     programsIn('programas'),
-    getPrograms(),
+    getFilmIndex(),
   ]);
-  const films = all.filter((p) => p.programType === FILM_TYPE);
+  const filmGenres = [...filmIndex.byContainer.keys()].sort((a, b) => a.localeCompare(b, 'es'));
 
   const paged = (id: string, name: string, type: string, genres: string[], required = false) => ({
     id,
@@ -56,14 +56,18 @@ export async function getManifest() {
     name: 'RTVE Play',
     description: 'Series, documentales, programas y cine de RTVE Play.',
     logo: 'https://www.rtve.es/favicon.ico',
-    resources: ['catalog', 'meta', 'stream'],
+    resources: [
+      'catalog',
+      { name: 'meta', types: ['series', 'movie'], idPrefixes: ['rtve:'] },
+      // 'tt' lets the addon answer IMDb-based stream requests for films RTVE carries.
+      { name: 'stream', types: ['series', 'movie'], idPrefixes: ['rtve:', 'tt'] },
+    ],
     types: ['series', 'movie'],
-    idPrefixes: ['rtve:'],
     catalogs: [
       paged('rtve-series', 'RTVE · Series', 'series', genresOf(series)),
       paged('rtve-documentales', 'RTVE · Documentales', 'series', genresOf(docs)),
       paged('rtve-programas', 'RTVE · Programas', 'series', genresOf(shows)),
-      paged('rtve-cine', 'RTVE · Cine', 'movie', films.map((f) => f.name), true),
+      paged('rtve-cine', 'RTVE · Cine', 'movie', filmGenres, true),
       { id: 'rtve-search', type: 'series', name: 'RTVE Play', extra: [{ name: 'search', isRequired: true }] },
     ],
     behaviorHints: { configurable: false },
@@ -105,12 +109,9 @@ export async function getCatalog(type: string, id: string, extra: URLSearchParam
   }
 
   if (id === 'rtve-cine') {
-    const films = (await getPrograms()).filter((p) => p.programType === FILM_TYPE);
-    const container = films.find((f) => f.name === genre) ?? films[0];
-    if (!container) return { metas: [] };
-    const page = Math.floor(skip / config.pageSize) + 1;
-    const vids = await getProgramVideos(container.id, page, config.pageSize);
-    return { metas: vids.map(filmMeta) };
+    const { byContainer } = await getFilmIndex();
+    const films = byContainer.get(genre ?? '') ?? [...byContainer.values()][0] ?? [];
+    return { metas: films.slice(skip, skip + config.pageSize).map(filmMeta) };
   }
 
   const group = ({ 'rtve-series': 'series', 'rtve-documentales': 'documentales', 'rtve-programas': 'programas' } as const)[
@@ -169,16 +170,26 @@ export async function getMeta(type: string, id: string) {
 // ---- streams ----------------------------------------------------------------
 
 export async function getStreams(type: string, id: string) {
-  if (!id.startsWith(VIDEO_PREFIX)) return { streams: [] };
-  const info = await getStream(id.slice(VIDEO_PREFIX.length));
+  if (id.startsWith(VIDEO_PREFIX)) return { streams: await streamsFor(id.slice(VIDEO_PREFIX.length)) };
+
+  // IMDb id of a film (no season/episode part): match against RTVE's films.
+  if (type === 'movie' && /^tt\d+$/.test(id)) {
+    const matches = (await getFilmIndex()).byImdb.get(id) ?? [];
+    const all = await Promise.all(matches.map((v) => streamsFor(v.id, matches.length > 1 ? v.title : undefined)));
+    return { streams: all.flat() };
+  }
+  return { streams: [] };
+}
+
+async function streamsFor(videoId: string, label?: string) {
+  const info = await getStream(videoId);
   // No plain source: DRM-only, geo-blocked or expired.
   const subtitles = info.subtitles.map((s, i) => ({ id: `rtve-${i}`, lang: s.lang, url: s.url }));
-  return {
-    streams: info.sources.map((src) => ({
-      name: 'RTVE Play',
-      description: `HLS · ${src.label}`,
-      url: src.url,
-      subtitles,
-    })),
-  };
+  return info.sources.map((src) => ({
+    name: 'RTVE Play',
+    description: `HLS · ${src.label}${label ? `
+${label}` : ''}`,
+    url: src.url,
+    subtitles,
+  }));
 }

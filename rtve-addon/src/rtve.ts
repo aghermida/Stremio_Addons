@@ -4,6 +4,7 @@ const RESOURCES = 'https://www.rtve.es/resources';
 // RTVE's CDN (Fastly) answers 403 to requests without a browser User-Agent.
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+export const FILM_TYPE = 'Contenedor Películas';
 const COMPLETE_TYPE = 39816; // video "type" id for "Completo" (full episode / film)
 
 export interface Program {
@@ -32,6 +33,7 @@ export interface Video {
   programTitle?: string;
   programId?: string;
   year?: number;
+  imdb?: string;
   directors: string[];
   cast: string[];
 }
@@ -147,6 +149,7 @@ function toVideo(i: any): Video {
     programTitle: prog,
     programId: i.programInfo?.id ? String(i.programInfo.id) : undefined,
     year: prodYear ? Number(prodYear) : undefined,
+    imdb: /^tt\d+$/.test(String(i.idImdb ?? '')) ? String(i.idImdb) : undefined,
     directors: splitNames(i.director),
     cast: splitNames(i.casting),
   };
@@ -247,6 +250,51 @@ export function getEpisodes(programId: string, max: number): Promise<Video[]> {
       out.push(...asc);
     }
     return out;
+  });
+}
+
+// ---- films index ----------------------------------------------------------
+
+export interface FilmIndex {
+  byContainer: Map<string, Video[]>; // container program name -> films, newest first
+  byImdb: Map<string, Video[]>;
+}
+
+// Film containers such as "Cine de barrio" mostly hold the presenter's intro
+// (3-25 min) as a "Completo" video, not the film. Real films are >= 60 min.
+const MIN_FILM_MS = 60 * 60_000;
+
+/** All full-length films of the film containers, deduplicated; refreshed every 6h. */
+export function getFilmIndex(): Promise<FilmIndex> {
+  return cached('films', 6 * 3600_000, async () => {
+    const containers = (await getPrograms()).filter((p) => p.programType === FILM_TYPE);
+    const seen = new Set<string>();
+    const byContainer = new Map<string, Video[]>();
+    const byImdb = new Map<string, Video[]>();
+
+    await Promise.all(
+      containers.map(async (c) => {
+        const films: Video[] = [];
+        for (let page = 1; page <= 20; page++) {
+          const d = await getJson<any>(
+            `${API}/programas/${c.id}/videos.json?type=${COMPLETE_TYPE}&size=100&page=${page}`
+          );
+          for (const item of d.page.items as any[]) {
+            const v = toVideo(item);
+            if ((v.duration ?? 0) < MIN_FILM_MS || seen.has(v.id)) continue;
+            seen.add(v.id);
+            films.push(v);
+            if (v.imdb) byImdb.set(v.imdb, [...(byImdb.get(v.imdb) ?? []), v]);
+          }
+          if (page >= d.page.totalPages) break;
+        }
+        if (films.length) {
+          films.sort((a, b) => (b.published ?? '').localeCompare(a.published ?? ''));
+          byContainer.set(c.name, films);
+        }
+      })
+    );
+    return { byContainer, byImdb };
   });
 }
 
