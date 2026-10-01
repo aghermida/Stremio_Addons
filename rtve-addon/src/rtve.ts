@@ -94,6 +94,7 @@ const ENTITIES: Record<string, string> = {
   nbsp: ' ', amp: '&', quot: '"', lt: '<', gt: '>', apos: "'",
   aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ', uuml: 'ü',
   Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', hellip: '…', ndash: '–', mdash: '—', laquo: '«', raquo: '»',
   agrave: 'à', egrave: 'è', ograve: 'ò', iquest: '¿', iexcl: '¡', ccedil: 'ç',
 };
 
