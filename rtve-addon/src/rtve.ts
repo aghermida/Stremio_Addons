@@ -264,14 +264,20 @@ const QUALITY_LABEL: Record<string, string> = { HD_FULL: '1080p', HD_READY: '720
 const QUALITY_ORDER = ['HD_FULL', 'HD_READY', 'HQ', 'Alta'];
 const HLS_HOST = 'https://rtvehlsvodlote7.rtve.es/mediavodv2/resources';
 
-async function isPlainHls(url: string): Promise<boolean> {
+/**
+ * 'ok' = plain manifest; 'blocked' = 403 (some renditions are limited to Spanish
+ * IPs, and this server may not be in Spain, so the client may still be able to
+ * play it); 'bad' = missing, encrypted or not a manifest.
+ */
+async function checkHls(url: string): Promise<'ok' | 'blocked' | 'bad'> {
   try {
     const res = await limited(() => fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) }));
-    if (!res.ok) return false;
+    if (res.status === 403) return 'blocked';
+    if (!res.ok) return 'bad';
     const body = await res.text();
-    return body.startsWith('#EXTM3U') && !/#EXT-X-(SESSION-)?KEY/.test(body);
+    return body.startsWith('#EXTM3U') && !/#EXT-X-(SESSION-)?KEY/.test(body) ? 'ok' : 'bad';
   } catch {
-    return false;
+    return 'bad';
   }
 }
 
@@ -291,8 +297,8 @@ export function getStream(id: string): Promise<StreamInfo> {
         label: QUALITY_LABEL[p.quality] ?? p.quality,
         url: `${HLS_HOST}/${d.catuid}/${p.fichero}/video.m3u8?hls_no_audio_only=true&hls_client_manifest_version=3&idasset=${id}`,
       }));
-      const ok = await Promise.all(candidates.map((c) => isPlainHls(c.url)));
-      candidates.forEach((c, i) => ok[i] && info.sources.push(c));
+      const checks = await Promise.all(candidates.map((c) => checkHls(c.url)));
+      candidates.forEach((c, i) => checks[i] !== 'bad' && info.sources.push(c));
     } catch {
       /* fall through to the redirect */
     }
